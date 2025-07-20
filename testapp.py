@@ -84,7 +84,8 @@ class FaceDetectionProcessor(VideoProcessorBase):
             # --- Inference ---
             yhat = self.model.predict(input_data, verbose=0)
             
-            confidence = yhat[0][0][0]
+            # Using [0][0][0] is a more robust way to get the scalar confidence
+            confidence = yhat[0][0][0] 
             sample_coords = yhat[1][0]
 
             out_img = img.copy()
@@ -97,9 +98,10 @@ class FaceDetectionProcessor(VideoProcessorBase):
                 cv2.rectangle(out_img, start_pt, end_pt, (50, 205, 50), 2) # Green box
                 cv2.putText(out_img, 'face', (start_pt[0], start_pt[1]-5), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 2)
 
-            # IMPORTANT FIX: The final frame sent back must NOT be converted to RGB again.
-            # It should be in the BGR format that OpenCV uses for drawing.
-            return av.VideoFrame.from_ndarray(out_img, format="bgr24")
+            # *** CRITICAL FIX ***
+            # The final frame sent to the browser MUST be in RGB format.
+            rgb_out = cv2.cvtColor(out_img, cv2.COLOR_BGR2RGB)
+            return av.VideoFrame.from_ndarray(rgb_out, format="rgb24")
 
         except Exception as e:
             logging.error(f"Error in video processing: {e}")
