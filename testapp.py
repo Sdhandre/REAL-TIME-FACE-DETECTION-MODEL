@@ -41,8 +41,7 @@ def load_h5_model():
         # Load the model without its training configuration
         model = tf.keras.models.load_model(MODEL_PATH, compile=False)
         
-        # *** THE FIX IS HERE: Manually compile the model for inference ***
-        # This addresses the warning and ensures .predict() works reliably.
+        # Manually compile the model for inference
         model.compile()
         
         st.write("✅ Keras Model loaded and compiled successfully!")
@@ -72,7 +71,7 @@ if st.session_state['run_face_stream']:
 else:
     st.info("Press Start Camera in the sidebar to begin live detection.")
 
-# --- Main Processor Class with Visual Debugging ---
+# --- Main Processor Class (Using User's Original Logic) ---
 class FaceDetectionProcessor(VideoProcessorBase):
     def __init__(self, keras_model) -> None:
         self.model = keras_model
@@ -82,46 +81,34 @@ class FaceDetectionProcessor(VideoProcessorBase):
     def recv(self, frame):
         try:
             img = frame.to_ndarray(format="bgr24")
-            frame_height, frame_width, _ = img.shape
 
-            # Preprocessing
-            new_dim = max(frame_height, frame_width)
-            padded_img = np.zeros((new_dim, new_dim, 3), dtype=np.uint8)
-            pad_h = (new_dim - frame_height) // 2
-            pad_w = (new_dim - frame_width) // 2
-            padded_img[pad_h:pad_h+frame_height, pad_w:pad_w+frame_width] = img
-            resized = cv2.resize(padded_img, (self.input_width, self.input_height))
+            # --- Preprocessing from user's original script ---
+            # For model input: crop the image
+            crop = img[50:500, 50:500, :]
+            
+            # Resize the cropped image for the model
+            resized = cv2.resize(crop, (self.input_width, self.input_height))
+            
+            # Normalize and expand dimensions
             normalized_resized = resized / 255.0
             input_data = np.expand_dims(normalized_resized, axis=0)
 
-            # Inference
+            # --- Inference ---
             yhat = self.model.predict(input_data, verbose=0)
             
-            # Extract the scalar confidence value
             confidence = yhat[0][0][0]
-            coords = yhat[1][0]
+            sample_coords = yhat[1][0]
 
             out_img = img.copy()
-
-            # --- VISUAL DEBUGGING ---
-            # Always draw the box, but change color based on confidence
-            box_color = (50, 205, 50) if confidence > 0.5 else (0, 0, 255) # Green or Red
-
-            # Coordinate Transformation
-            box_on_padded_x1 = int(coords[1] * new_dim)
-            box_on_padded_y1 = int(coords[0] * new_dim)
-            box_on_padded_x2 = int(coords[3] * new_dim)
-            box_on_padded_y2 = int(coords[2] * new_dim)
-            
-            x1 = box_on_padded_x1 - pad_w
-            y1 = box_on_padded_y1 - pad_h
-            x2 = box_on_padded_x2 - pad_w
-            y2 = box_on_padded_y2 - pad_h
-
-            # Draw the box and confidence text on every frame
-            cv2.rectangle(out_img, (x1, y1), (x2, y2), box_color, 2)
-            cv2.putText(out_img, f'{round(confidence*100, 1)}%', (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-            # ------------------------
+            if confidence > 0.5:
+                # --- Coordinate Transformation from user's original script ---
+                # Scale bbox to match crop and then map to the original frame
+                start_pt = (int(sample_coords[1]*450) + 50, int(sample_coords[0]*450) + 50)
+                end_pt = (int(sample_coords[3]*450) + 50, int(sample_coords[2]*450) + 50)
+                
+                # Draw the final bounding box and text
+                cv2.rectangle(out_img, start_pt, end_pt, (50, 205, 50), 2) # Green box
+                cv2.putText(out_img, 'face', (start_pt[0], start_pt[1]-5), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 2)
 
             return av.VideoFrame.from_ndarray(out_img, format="bgr24")
 
