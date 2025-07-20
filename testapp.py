@@ -3,9 +3,12 @@ from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, WebRtcMode
 import av
 import cv2
 import numpy as np
-# IMPORTANT: Import the lightweight TFLite runtime
 import tflite_runtime.interpreter as tflite
 import traceback
+import logging
+
+# --- Setup Logging ---
+logging.basicConfig(level=logging.INFO)
 
 # --- UI/UX Branding ---
 st.set_page_config(page_title="Live Face Detection", page_icon="🤖", layout="wide")
@@ -21,7 +24,6 @@ st.sidebar.header("📷 Video Controls")
 def load_tflite_model():
     st.write("Attempting to load TFLite model...")
     try:
-        # Load the TFLite model and allocate tensors.
         interpreter = tflite.Interpreter(model_path='facetracker.tflite')
         interpreter.allocate_tensors()
         st.write("✅ TFLite Model loaded successfully!")
@@ -52,9 +54,10 @@ if st.session_state['run_face_stream']:
 else:
     st.info("Press Start Camera in the sidebar to begin live detection.")
 
-# --- Main Processor Class with Enhanced Debugging ---
+# --- Main Processor Class with Aspect-Ratio-Preserving Resize ---
 class FaceDetectionProcessor(VideoProcessorBase):
     def __init__(self, model_interpreter) -> None:
+        logging.info("Processor Initialized")
         self.interpreter = model_interpreter
         self.input_details = self.interpreter.get_input_details()
         self.output_details = self.interpreter.get_output_details()
@@ -66,59 +69,77 @@ class FaceDetectionProcessor(VideoProcessorBase):
             img = frame.to_ndarray(format="bgr24")
             frame_height, frame_width, _ = img.shape
 
-            # Preprocess the image
-            rgb_frame = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            resized = cv2.resize(rgb_frame, (self.input_width, self.input_height))
+            # --- Aspect-Ratio-Preserving Preprocessing ---
+            # 1. Create a square canvas and paste the image in the middle
+            new_dim = max(frame_height, frame_width)
+            padded_img = np.zeros((new_dim, new_dim, 3), dtype=np.uint8)
+            
+            # Calculate padding
+            pad_h = (new_dim - frame_height) // 2
+            pad_w = (new_dim - frame_width) // 2
+            
+            padded_img[pad_h:pad_h+frame_height, pad_w:pad_w+frame_width] = img
+
+            # 2. Resize the padded image to the model's input size
+            resized = cv2.resize(padded_img, (self.input_width, self.input_height))
             input_data = np.expand_dims(resized, axis=0).astype(np.float32)
 
-            # Perform inference
+            # --- Inference ---
             self.interpreter.set_tensor(self.input_details[0]['index'], input_data)
             self.interpreter.invoke()
-
-            # Retrieve detection results
             yhat = [self.interpreter.get_tensor(self.output_details[i]['index']) for i in range(len(self.output_details))]
             
-            # yhat[0] is confidence, yhat[1] is coordinates
             confidence = yhat[0][0][0]
             coords = yhat[1][0]
 
-            # Draw bounding box on the original frame
             out_img = img.copy()
             if confidence > 0.5:
-                x1 = int(coords[1] * frame_width)
-                y1 = int(coords[0] * frame_height)
-                x2 = int(coords[3] * frame_width)
-                y2 = int(coords[2] * frame_height)
+                # --- Correct Coordinate Transformation ---
+                # 1. Scale coordinates from model's output (0-1) to the padded image size
+                box_on_padded_x1 = int(coords[1] * new_dim)
+                box_on_padded_y1 = int(coords[0] * new_dim)
+                box_on_padded_x2 = int(coords[3] * new_dim)
+                box_on_padded_y2 = int(coords[2] * new_dim)
                 
-                cv2.rectangle(out_img, (x1, y1), (x2, y2), (50, 205, 50), 2) # Green box
+                # 2. Subtract the padding to map coordinates back to the original frame
+                x1 = box_on_padded_x1 - pad_w
+                y1 = box_on_padded_y1 - pad_h
+                x2 = box_on_padded_x2 - pad_w
+                y2 = box_on_padded_y2 - pad_h
+
+                # Draw the final, accurate bounding box
+                cv2.rectangle(out_img, (x1, y1), (x2, y2), (50, 205, 50), 2)
                 cv2.putText(out_img, f'{round(confidence*100, 1)}%', (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
 
             return av.VideoFrame.from_ndarray(out_img, format="bgr24")
 
         except Exception as e:
-            st.error(f"Error in video processing: {e}")
+            logging.error(f"Error in video processing: {e}")
             traceback.print_exc()
             return av.VideoFrame.from_ndarray(frame.to_ndarray(format="bgr24"), format="bgr24")
 
-
-# --- Factory function to create the processor ---
 def processor_factory():
+    if interpreter is None:
+        st.error("Model is not loaded. Cannot start video stream.")
+        return None
     return FaceDetectionProcessor(model_interpreter=interpreter)
 
-# --- Start/Stop Stream Based on State ---
-if st.session_state['run_face_stream'] and interpreter:
+if st.session_state['run_face_stream']:
     webrtc_streamer(
         key="face-detect-stream",
         mode=WebRtcMode.SENDRECV,
         rtc_configuration={
-            "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]
+            "iceServers": [
+                {"urls": ["stun:stun.l.google.com:19302"]},
+                {"urls": ["stun:stun1.l.google.com:19302"]},
+                {"urls": ["stun:stun2.l.google.com:19302"]},
+            ]
         },
         video_processor_factory=processor_factory,
         media_stream_constraints={"video": True, "audio": False},
         async_processing=True
     )
 
-# --- Help and Info ---
 with st.sidebar.expander("ℹ️ How To Use", expanded=True):
     st.markdown("""
     **1. Click “Start Camera”** to begin live detection.
