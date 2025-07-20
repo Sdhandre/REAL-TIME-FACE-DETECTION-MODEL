@@ -70,19 +70,17 @@ class FaceDetectionProcessor(VideoProcessorBase):
             frame_height, frame_width, _ = img.shape
 
             # --- Aspect-Ratio-Preserving Preprocessing ---
-            # 1. Create a square canvas and paste the image in the middle
             new_dim = max(frame_height, frame_width)
             padded_img = np.zeros((new_dim, new_dim, 3), dtype=np.uint8)
-            
-            # Calculate padding
             pad_h = (new_dim - frame_height) // 2
             pad_w = (new_dim - frame_width) // 2
-            
             padded_img[pad_h:pad_h+frame_height, pad_w:pad_w+frame_width] = img
 
-            # 2. Resize the padded image to the model's input size
             resized = cv2.resize(padded_img, (self.input_width, self.input_height))
-            input_data = np.expand_dims(resized, axis=0).astype(np.float32)
+            
+            # *** THE FIX IS HERE: NORMALIZE THE IMAGE DATA ***
+            normalized_resized = resized / 255.0
+            input_data = np.expand_dims(normalized_resized, axis=0).astype(np.float32)
 
             # --- Inference ---
             self.interpreter.set_tensor(self.input_details[0]['index'], input_data)
@@ -95,19 +93,16 @@ class FaceDetectionProcessor(VideoProcessorBase):
             out_img = img.copy()
             if confidence > 0.5:
                 # --- Correct Coordinate Transformation ---
-                # 1. Scale coordinates from model's output (0-1) to the padded image size
                 box_on_padded_x1 = int(coords[1] * new_dim)
                 box_on_padded_y1 = int(coords[0] * new_dim)
                 box_on_padded_x2 = int(coords[3] * new_dim)
                 box_on_padded_y2 = int(coords[2] * new_dim)
                 
-                # 2. Subtract the padding to map coordinates back to the original frame
                 x1 = box_on_padded_x1 - pad_w
                 y1 = box_on_padded_y1 - pad_h
                 x2 = box_on_padded_x2 - pad_w
                 y2 = box_on_padded_y2 - pad_h
 
-                # Draw the final, accurate bounding box
                 cv2.rectangle(out_img, (x1, y1), (x2, y2), (50, 205, 50), 2)
                 cv2.putText(out_img, f'{round(confidence*100, 1)}%', (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
 
