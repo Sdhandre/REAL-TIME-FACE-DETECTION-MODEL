@@ -31,7 +31,7 @@ def load_h5_model():
     #    https://drive.google.com/file/d/THIS_IS_THE_FILE_ID/view?usp=sharing
     # 3. Paste ONLY the FILE_ID below
     # -----------------
-    FILE_ID = "YOUR_GOOGLE_DRIVE_FILE_ID_HERE" # <--- PASTE YOUR .h5 FILE ID HERE
+    FILE_ID = "1OiakFnWq3_WJqfSJPyFbqnLpMOQYpxhy" # <--- PASTE YOUR .h5 FILE ID HERE
     # -----------------
 
     if FILE_ID == "1OiakFnWq3_WJqfSJPyFbqnLpMOQYpxhy":
