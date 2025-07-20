@@ -84,21 +84,29 @@ class FaceDetectionProcessor(VideoProcessorBase):
             # --- Inference ---
             yhat = self.model.predict(input_data, verbose=0)
             
-            # Using [0][0][0] is a more robust way to get the scalar confidence
             confidence = yhat[0][0][0] 
             sample_coords = yhat[1][0]
 
             out_img = img.copy()
             if confidence > 0.5:
-                # --- Coordinate Transformation from user's original script ---
-                start_pt = (int(sample_coords[1]*450) + 50, int(sample_coords[0]*450) + 50)
-                end_pt = (int(sample_coords[3]*450) + 50, int(sample_coords[2]*450) + 50)
+                # --- Coordinate Transformation ---
+                # Scale coords to the 450x450 crop size
+                scaled_coords = np.multiply(sample_coords, [450,450,450,450]).astype(int)
                 
-                # Draw the final bounding box and text
-                cv2.rectangle(out_img, start_pt, end_pt, (50, 205, 50), 2) # Green box
-                cv2.putText(out_img, 'face', (start_pt[0], start_pt[1]-5), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 2)
+                # Get the absolute coordinates on the original image by adding the crop offset
+                x1, y1 = scaled_coords[1] + 50, scaled_coords[0] + 50
+                x2, y2 = scaled_coords[3] + 50, scaled_coords[2] + 50
+                
+                # --- Drawing logic from user's local script ---
+                # Controls the main rectangle
+                cv2.rectangle(out_img, (x1, y1), (x2, y2), (255,0,0), 2)
+                
+                # Controls the label rectangle
+                cv2.rectangle(out_img, (x1, y1-30), (x1+80, y1), (255,0,0), -1)
+                
+                # Controls the text rendered
+                cv2.putText(out_img, 'face', (x1, y1-5), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 2, cv2.LINE_AA)
 
-            # *** CRITICAL FIX ***
             # The final frame sent to the browser MUST be in RGB format.
             rgb_out = cv2.cvtColor(out_img, cv2.COLOR_BGR2RGB)
             return av.VideoFrame.from_ndarray(rgb_out, format="rgb24")
