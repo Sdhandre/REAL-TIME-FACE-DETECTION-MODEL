@@ -6,6 +6,8 @@ import numpy as np
 import tflite_runtime.interpreter as tflite
 import traceback
 import logging
+import requests
+import os
 
 # --- Setup Logging ---
 logging.basicConfig(level=logging.INFO)
@@ -19,18 +21,49 @@ st.markdown(
 )
 st.sidebar.header("📷 Video Controls")
 
-# --- TFLite Model (cached load) ---
+# --- TFLite Model (cached load from Google Drive) ---
 @st.cache_resource
 def load_tflite_model():
+    # --- IMPORTANT ---
+    # 1. Share your facetracker.tflite file in Google Drive to "Anyone with the link"
+    # 2. Get the shareable link. It will look like:
+    #    https://drive.google.com/file/d/THIS_IS_THE_FILE_ID/view?usp=sharing
+    # 3. Paste ONLY the FILE_ID below
+    # -----------------
+    FILE_ID = "1OiakFnWq3_WJqfSJPyFbqnLpMOQYpxhy" # <--- PASTE YOUR FILE ID HERE
+    # -----------------
+
+    if FILE_ID == "YOUR_GOOGLE_DRIVE_FILE_ID_HERE":
+        st.error("Please update the `FILE_ID` in the `testapp.py` file with your Google Drive file ID.")
+        return None
+
+    # Construct the direct download URL
+    URL = f"https://drive.google.com/uc?export=download&id={FILE_ID}"
+    MODEL_PATH = "facetracker.tflite"
+
+    # Download the model if it doesn't exist locally in the Streamlit Cloud container
+    if not os.path.exists(MODEL_PATH):
+        with st.spinner("Downloading model from Google Drive... (this may take a moment)"):
+            try:
+                response = requests.get(URL, stream=True)
+                response.raise_for_status() # Raise an exception for bad status codes
+                with open(MODEL_PATH, "wb") as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        f.write(chunk)
+                st.success("Model downloaded successfully!")
+            except requests.exceptions.RequestException as e:
+                st.error(f"Error downloading model: {e}")
+                return None
+
+    # Load the model from the local file
     st.write("Attempting to load TFLite model...")
     try:
-        interpreter = tflite.Interpreter(model_path='facetracker.tflite')
+        interpreter = tflite.Interpreter(model_path=MODEL_PATH)
         interpreter.allocate_tensors()
         st.write("✅ TFLite Model loaded successfully!")
         return interpreter
     except Exception as e:
-        st.error(f"Failed to load model from 'facetracker.tflite'. Error: {e}")
-        st.error("Please make sure the 'facetracker.tflite' file is in the root of your GitHub repository.")
+        st.error(f"Failed to load model from '{MODEL_PATH}'. Error: {e}")
         return None
 
 interpreter = load_tflite_model()
