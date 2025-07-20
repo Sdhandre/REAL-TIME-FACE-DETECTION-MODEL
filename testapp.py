@@ -6,7 +6,6 @@ import numpy as np
 import tensorflow as tf
 import traceback
 import logging
-import gdown
 import os
 
 # --- Setup Logging ---
@@ -16,28 +15,16 @@ logging.basicConfig(level=logging.INFO)
 st.set_page_config(page_title="Live Face Detection", page_icon="🤖", layout="wide")
 st.markdown("<h1 style='text-align: center; color: #E36209;'>🤖 Live Face Detection Demo</h1>", unsafe_allow_html=True)
 st.markdown(
-    "<p style='text-align: center;'>Webcam-based face detection powered by a Keras (.h5) model!</p>",
+    "<p style='text-align: center;'>Webcam-based face detection powered by your custom ML model!</p>",
     unsafe_allow_html=True
 )
 st.sidebar.header("📷 Video Controls")
 
-# --- Keras H5 Model (cached load from Google Drive) ---
+# --- Keras H5 Model (cached load from local file) ---
 @st.cache_resource
 def load_h5_model():
-    # Using the File ID you provided
-    FILE_ID = "1OiakFnWq3_WJqfSJPyFbqnLpMOQYpxhy"
     MODEL_PATH = "facetracker.h5"
-
-    if not os.path.exists(MODEL_PATH):
-        with st.spinner("Downloading H5 model from Google Drive..."):
-            try:
-                gdown.download(id=FILE_ID, output=MODEL_PATH, quiet=False)
-                st.success("Model downloaded successfully!")
-            except Exception as e:
-                st.error(f"Error downloading model: {e}")
-                return None
-
-    st.write("Attempting to load Keras (.h5) model...")
+    st.write("Attempting to load Keras (.h5) model from local repository...")
     try:
         # Load the model and manually compile it for inference
         model = tf.keras.models.load_model(MODEL_PATH, compile=False)
@@ -45,7 +32,7 @@ def load_h5_model():
         st.write("✅ Keras Model loaded and compiled successfully!")
         return model
     except Exception as e:
-        st.error(f"Failed to load model from '{MODEL_PATH}'. Error: {e}")
+        st.error(f"Failed to load model from '{MODEL_PATH}'. Make sure it's in your GitHub repo. Error: {e}")
         return None
 
 model = load_h5_model()
@@ -69,13 +56,13 @@ if st.session_state['run_face_stream']:
 else:
     st.info("Press Start Camera in the sidebar to begin live detection.")
 
-# --- Main Processor Class (Using User's Original Logic with Fixes) ---
+# --- Main Processor Class (Using User's Original Logic with Cloud Fixes) ---
 class FaceDetectionProcessor(VideoProcessorBase):
     def __init__(self, keras_model) -> None:
         self.model = keras_model
-        # Get input shape from the model, assuming (None, height, width, channels)
-        self.input_height = self.model.input_shape[1]
-        self.input_width = self.model.input_shape[2]
+        # Get input shape from the model
+        self.input_height = 120
+        self.input_width = 120
 
     def recv(self, frame):
         try:
@@ -88,7 +75,7 @@ class FaceDetectionProcessor(VideoProcessorBase):
             rgb_crop = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
             
             # Resize the RGB cropped image for the model
-            resized = cv2.resize(rgb_crop, (self.input_width, self.input_height))
+            resized = tf.image.resize(rgb_crop, (self.input_height, self.input_width))
             
             # Normalize and expand dimensions
             normalized_resized = resized / 255.0
@@ -110,9 +97,9 @@ class FaceDetectionProcessor(VideoProcessorBase):
                 cv2.rectangle(out_img, start_pt, end_pt, (50, 205, 50), 2) # Green box
                 cv2.putText(out_img, 'face', (start_pt[0], start_pt[1]-5), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 2)
 
-            # Convert the final output image back to RGB for display
-            rgb_out = cv2.cvtColor(out_img, cv2.COLOR_BGR2RGB)
-            return av.VideoFrame.from_ndarray(rgb_out, format="rgb24")
+            # IMPORTANT FIX: The final frame sent back must NOT be converted to RGB again.
+            # It should be in the BGR format that OpenCV uses for drawing.
+            return av.VideoFrame.from_ndarray(out_img, format="bgr24")
 
         except Exception as e:
             logging.error(f"Error in video processing: {e}")
@@ -130,7 +117,7 @@ if st.session_state['run_face_stream']:
     webrtc_streamer(
         key="face-detect-stream",
         mode=WebRtcMode.SENDRECV,
-        # *** THE FIX IS HERE: ADDING STUN/TURN SERVERS FOR ROBUST CONNECTION ***
+        # Add STUN/TURN servers for robust cloud connection
         rtc_configuration={
             "iceServers": [
                 {"urls": ["stun:stun.l.google.com:19302"]},
