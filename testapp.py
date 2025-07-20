@@ -34,7 +34,7 @@ def load_h5_model():
     FILE_ID = "YOUR_GOOGLE_DRIVE_FILE_ID_HERE" # <--- PASTE YOUR .h5 FILE ID HERE
     # -----------------
 
-    if FILE_ID == "YOUR_GOOGLE_DRIVE_FILE_ID_HERE":
+    if FILE_ID == "1OiakFnWq3_WJqfSJPyFbqnLpMOQYpxhy":
         st.error("Please update the `FILE_ID` in the `testapp.py` file with your Google Drive file ID.")
         return None
 
