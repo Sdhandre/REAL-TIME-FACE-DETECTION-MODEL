@@ -38,8 +38,14 @@ def load_h5_model():
 
     st.write("Attempting to load Keras (.h5) model...")
     try:
-        model = tf.keras.models.load_model(MODEL_PATH)
-        st.write("✅ Keras Model loaded successfully!")
+        # Load the model without its training configuration
+        model = tf.keras.models.load_model(MODEL_PATH, compile=False)
+        
+        # *** THE FIX IS HERE: Manually compile the model for inference ***
+        # This addresses the warning and ensures .predict() works reliably.
+        model.compile()
+        
+        st.write("✅ Keras Model loaded and compiled successfully!")
         return model
     except Exception as e:
         st.error(f"Failed to load model from '{MODEL_PATH}'. Error: {e}")
