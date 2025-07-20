@@ -5,4 +5,4 @@ tflite-runtime
 numpy<1.24,>=1.22
 av
 aiortc==1.5.0
-aioice==0.9.1
+aioice==0.9.0
