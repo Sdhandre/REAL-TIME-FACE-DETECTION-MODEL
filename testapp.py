@@ -3,10 +3,11 @@ from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, WebRtcMode
 import av
 import cv2
 import numpy as np
-import tflite_runtime.interpreter as tflite
+# IMPORTANT: Import the full TensorFlow library
+import tensorflow as tf
 import traceback
 import logging
-import requests
+import gdown
 import os
 
 # --- Setup Logging ---
@@ -16,57 +17,50 @@ logging.basicConfig(level=logging.INFO)
 st.set_page_config(page_title="Live Face Detection", page_icon="🤖", layout="wide")
 st.markdown("<h1 style='text-align: center; color: #E36209;'>🤖 Live Face Detection Demo</h1>", unsafe_allow_html=True)
 st.markdown(
-    "<p style='text-align: center;'>Webcam-based face detection powered by a lightweight TFLite model!</p>",
+    "<p style='text-align: center;'>Webcam-based face detection powered by a Keras (.h5) model!</p>",
     unsafe_allow_html=True
 )
 st.sidebar.header("📷 Video Controls")
 
-# --- TFLite Model (cached load from Google Drive) ---
+# --- Keras H5 Model (cached load from Google Drive) ---
 @st.cache_resource
-def load_tflite_model():
+def load_h5_model():
     # --- IMPORTANT ---
-    # 1. Share your facetracker.tflite file in Google Drive to "Anyone with the link"
+    # 1. Share your facetracker.h5 file in Google Drive to "Anyone with the link"
     # 2. Get the shareable link. It will look like:
     #    https://drive.google.com/file/d/THIS_IS_THE_FILE_ID/view?usp=sharing
     # 3. Paste ONLY the FILE_ID below
     # -----------------
-    FILE_ID = "1OiakFnWq3_WJqfSJPyFbqnLpMOQYpxhy" # <--- PASTE YOUR FILE ID HERE
+    FILE_ID = "YOUR_GOOGLE_DRIVE_FILE_ID_HERE" # <--- PASTE YOUR .h5 FILE ID HERE
     # -----------------
 
     if FILE_ID == "YOUR_GOOGLE_DRIVE_FILE_ID_HERE":
         st.error("Please update the `FILE_ID` in the `testapp.py` file with your Google Drive file ID.")
         return None
 
-    # Construct the direct download URL
-    URL = f"https://drive.google.com/uc?export=download&id={FILE_ID}"
-    MODEL_PATH = "facetracker.tflite"
+    MODEL_PATH = "facetracker.h5"
 
-    # Download the model if it doesn't exist locally in the Streamlit Cloud container
+    # Download the model if it doesn't exist locally
     if not os.path.exists(MODEL_PATH):
-        with st.spinner("Downloading model from Google Drive... (this may take a moment)"):
+        with st.spinner("Downloading H5 model from Google Drive... (this may take a moment)"):
             try:
-                response = requests.get(URL, stream=True)
-                response.raise_for_status() # Raise an exception for bad status codes
-                with open(MODEL_PATH, "wb") as f:
-                    for chunk in response.iter_content(chunk_size=8192):
-                        f.write(chunk)
+                gdown.download(id=FILE_ID, output=MODEL_PATH, quiet=False)
                 st.success("Model downloaded successfully!")
-            except requests.exceptions.RequestException as e:
+            except Exception as e:
                 st.error(f"Error downloading model: {e}")
                 return None
 
     # Load the model from the local file
-    st.write("Attempting to load TFLite model...")
+    st.write("Attempting to load Keras (.h5) model...")
     try:
-        interpreter = tflite.Interpreter(model_path=MODEL_PATH)
-        interpreter.allocate_tensors()
-        st.write("✅ TFLite Model loaded successfully!")
-        return interpreter
+        model = tf.keras.models.load_model(MODEL_PATH)
+        st.write("✅ Keras Model loaded successfully!")
+        return model
     except Exception as e:
         st.error(f"Failed to load model from '{MODEL_PATH}'. Error: {e}")
         return None
 
-interpreter = load_tflite_model()
+model = load_h5_model()
 
 # --- App state for controlling stream ---
 if 'run_face_stream' not in st.session_state:
@@ -89,13 +83,12 @@ else:
 
 # --- Main Processor Class with Aspect-Ratio-Preserving Resize ---
 class FaceDetectionProcessor(VideoProcessorBase):
-    def __init__(self, model_interpreter) -> None:
+    def __init__(self, keras_model) -> None:
         logging.info("Processor Initialized")
-        self.interpreter = model_interpreter
-        self.input_details = self.interpreter.get_input_details()
-        self.output_details = self.interpreter.get_output_details()
-        self.input_height = self.input_details[0]['shape'][1]
-        self.input_width = self.input_details[0]['shape'][2]
+        self.model = keras_model
+        # Get input shape from the model
+        self.input_height = self.model.input_shape[1]
+        self.input_width = self.model.input_shape[2]
 
     def recv(self, frame):
         try:
@@ -111,16 +104,13 @@ class FaceDetectionProcessor(VideoProcessorBase):
 
             resized = cv2.resize(padded_img, (self.input_width, self.input_height))
             
-            # *** THE FIX IS HERE: NORMALIZE THE IMAGE DATA ***
             normalized_resized = resized / 255.0
-            input_data = np.expand_dims(normalized_resized, axis=0).astype(np.float32)
+            input_data = np.expand_dims(normalized_resized, axis=0)
 
             # --- Inference ---
-            self.interpreter.set_tensor(self.input_details[0]['index'], input_data)
-            self.interpreter.invoke()
-            yhat = [self.interpreter.get_tensor(self.output_details[i]['index']) for i in range(len(self.output_details))]
+            yhat = self.model.predict(input_data)
             
-            confidence = yhat[0][0][0]
+            confidence = yhat[0][0]
             coords = yhat[1][0]
 
             out_img = img.copy()
@@ -147,10 +137,10 @@ class FaceDetectionProcessor(VideoProcessorBase):
             return av.VideoFrame.from_ndarray(frame.to_ndarray(format="bgr24"), format="bgr24")
 
 def processor_factory():
-    if interpreter is None:
+    if model is None:
         st.error("Model is not loaded. Cannot start video stream.")
         return None
-    return FaceDetectionProcessor(model_interpreter=interpreter)
+    return FaceDetectionProcessor(keras_model=model)
 
 if st.session_state['run_face_stream']:
     webrtc_streamer(
