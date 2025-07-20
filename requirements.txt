@@ -2,6 +2,6 @@ streamlit
 streamlit-webrtc
 opencv-python-headless
 tensorflow
-numpy
+numpy<1.24,>=1.22
 Pillow
 av
