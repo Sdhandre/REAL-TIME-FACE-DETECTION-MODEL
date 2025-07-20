@@ -127,11 +127,15 @@ if st.session_state['run_face_stream']:
     webrtc_streamer(
         key="face-detect-stream",
         mode=WebRtcMode.SENDRECV,
+        # *** THE FIX IS HERE: ADDING TURN SERVERS FOR ROBUST CONNECTION ***
         rtc_configuration={
             "iceServers": [
                 {"urls": ["stun:stun.l.google.com:19302"]},
-                {"urls": ["stun:stun1.l.google.com:19302"]},
-                {"urls": ["stun:stun2.l.google.com:19302"]},
+                {
+                    "urls": ["turn:numb.viagenie.ca"],
+                    "username": "webrtc@live.com",
+                    "credential": "muazkh",
+                },
             ]
         },
         video_processor_factory=processor_factory,
