@@ -74,8 +74,8 @@ class FaceDetectionProcessor(VideoProcessorBase):
             # Convert color from BGR to RGB for the model
             rgb_crop = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
             
-            # Resize the RGB cropped image for the model
-            resized = tf.image.resize(rgb_crop, (self.input_height, self.input_width))
+            # *** THE FIX IS HERE: Use cv2.resize for consistency with local environment ***
+            resized = cv2.resize(rgb_crop, (self.input_width, self.input_height))
             
             # Normalize and expand dimensions
             normalized_resized = resized / 255.0
@@ -91,11 +91,16 @@ class FaceDetectionProcessor(VideoProcessorBase):
             if confidence > 0.5:
                 # --- Coordinate Transformation ---
                 # Scale coords to the 450x450 crop size
-                scaled_coords = np.multiply(sample_coords, [450,450,450,450]).astype(int)
+                x1_scaled = int(sample_coords[1] * 450)
+                y1_scaled = int(sample_coords[0] * 450)
+                x2_scaled = int(sample_coords[3] * 450)
+                y2_scaled = int(sample_coords[2] * 450)
                 
                 # Get the absolute coordinates on the original image by adding the crop offset
-                x1, y1 = scaled_coords[1] + 50, scaled_coords[0] + 50
-                x2, y2 = scaled_coords[3] + 50, scaled_coords[2] + 50
+                x1 = x1_scaled + 50
+                y1 = y1_scaled + 50
+                x2 = x2_scaled + 50
+                y2 = y2_scaled + 50
                 
                 # --- Drawing logic from user's local script ---
                 # Controls the main rectangle
