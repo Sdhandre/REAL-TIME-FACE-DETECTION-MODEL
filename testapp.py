@@ -71,7 +71,7 @@ if st.session_state['run_face_stream']:
 else:
     st.info("Press Start Camera in the sidebar to begin live detection.")
 
-# --- Main Processor Class (Using User's Original Logic) ---
+# --- Main Processor Class (Using User's Original Logic with Fixes) ---
 class FaceDetectionProcessor(VideoProcessorBase):
     def __init__(self, keras_model) -> None:
         self.model = keras_model
@@ -83,11 +83,13 @@ class FaceDetectionProcessor(VideoProcessorBase):
             img = frame.to_ndarray(format="bgr24")
 
             # --- Preprocessing from user's original script ---
-            # For model input: crop the image
             crop = img[50:500, 50:500, :]
             
-            # Resize the cropped image for the model
-            resized = cv2.resize(crop, (self.input_width, self.input_height))
+            # *** THE FIX IS HERE: CONVERT COLOR FROM BGR TO RGB ***
+            rgb_crop = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
+            
+            # Resize the RGB cropped image for the model
+            resized = cv2.resize(rgb_crop, (self.input_width, self.input_height))
             
             # Normalize and expand dimensions
             normalized_resized = resized / 255.0
@@ -100,15 +102,18 @@ class FaceDetectionProcessor(VideoProcessorBase):
             sample_coords = yhat[1][0]
 
             out_img = img.copy()
-            if confidence > 0.5:
-                # --- Coordinate Transformation from user's original script ---
-                # Scale bbox to match crop and then map to the original frame
-                start_pt = (int(sample_coords[1]*450) + 50, int(sample_coords[0]*450) + 50)
-                end_pt = (int(sample_coords[3]*450) + 50, int(sample_coords[2]*450) + 50)
-                
-                # Draw the final bounding box and text
-                cv2.rectangle(out_img, start_pt, end_pt, (50, 205, 50), 2) # Green box
-                cv2.putText(out_img, 'face', (start_pt[0], start_pt[1]-5), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 2)
+            
+            # --- VISUAL DEBUGGING ---
+            box_color = (50, 205, 50) if confidence > 0.5 else (0, 0, 255) # Green or Red
+
+            # Coordinate Transformation
+            start_pt = (int(sample_coords[1]*450) + 50, int(sample_coords[0]*450) + 50)
+            end_pt = (int(sample_coords[3]*450) + 50, int(sample_coords[2]*450) + 50)
+            
+            # Always draw the box and confidence text
+            cv2.rectangle(out_img, start_pt, end_pt, box_color, 2)
+            cv2.putText(out_img, f'{round(confidence*100, 1)}%', (start_pt[0], start_pt[1]-10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255,255,255), 2)
+            # ------------------------
 
             return av.VideoFrame.from_ndarray(out_img, format="bgr24")
 
@@ -127,7 +132,6 @@ if st.session_state['run_face_stream']:
     webrtc_streamer(
         key="face-detect-stream",
         mode=WebRtcMode.SENDRECV,
-        # *** THE FIX IS HERE: ADDING TURN SERVERS FOR ROBUST CONNECTION ***
         rtc_configuration={
             "iceServers": [
                 {"urls": ["stun:stun.l.google.com:19302"]},
