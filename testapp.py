@@ -23,7 +23,7 @@ st.sidebar.header("📷 Video Controls")
 # --- Keras H5 Model (cached load from local file) ---
 @st.cache_resource
 def load_model():
-    return tf.keras.models.load_model('cpu_model2.h5')
+    return tf.keras.models.load_model('cpu_model.h5')
 model = load_model()
 
 # --- App state for controlling stream ---
