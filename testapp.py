@@ -17,7 +17,7 @@ st.sidebar.header("📷 Video Controls")
 #--- Model (cached load) ---
 @st.cache_resource
 def load_model():
-    return tf.keras.models.load_model('facetracker.h5')
+    return tf.keras.models.load_model('cpu_model.h5')
 model = load_model()
 
 #--- App state for controlling stream ---
