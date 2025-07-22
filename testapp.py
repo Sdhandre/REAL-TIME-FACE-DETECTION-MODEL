@@ -17,7 +17,7 @@ st.sidebar.header("📷 Video Controls")
 @st.cache_resource
 def load_model():
     try:
-        model = tf.keras.models.load_model('facetrackercpu.h5', compile=False)
+        model = tf.keras.models.load_model('facetracker.h5', compile=False)
         return model
     except Exception as e:
         st.error(f"Failed to load model: {e}")
